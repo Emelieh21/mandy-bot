@@ -17,8 +17,8 @@ bot.
 
 import os
 import logging
-from utils.functions import get_update
-
+from utils.functions import get_update, generate_latest_plot, is_invalid_user
+from subprocess import Popen, DEVNULL
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 
 # Enable logging
@@ -27,27 +27,85 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 logger = logging.getLogger(__name__)
 
+# Define global object to assign subprocess to
+extProc = None
 
 # Define a few command handlers. These usually take the two arguments update and
 # context. Error handlers also receive the raised TelegramError object in error.
-def start(update, context):
-    """Send a message when the command /start is issued."""
-    update.message.reply_text('Hi, I am Mandy!')
 
 
 def help(update, context):
     """Send a message when the command /help is issued."""
-    update.message.reply_text('I am not going to help you.')
+    # For now, Mandy can only talk to me
+    if is_invalid_user(update):
+        return
+    help_text = (
+        "Hi, I am Mandy. I can assist you with the following commands:\n"
+        "/send_update - Sends a summary of my noise\n"
+        "/send_audio - Sends a voice clip\n"
+        "/send_plot - Sends a plot\n"
+        "/start_tracking - To start tracking Mandy's noise\n"
+        "/stop_tracking - To stop tracking Mandy's noise\n"
+    )
+    update.message.reply_text(help_text)
 
-def update(update, context):
+
+def send_update(update, context):
     """Send a message when the command /update is issued."""
+    # For now, Mandy can only talk to me
+    if is_invalid_user(update):
+        return
     txt = get_update()
     update.message.reply_text(txt)
-    update.message.reply_audio(open("./assets/dog-barking.wav", "rb"), title="Hear me bark!")    
 
-def echo(update, context):
-    """Echo the user message."""
-    update.message.reply_text(update.message.text)
+
+def send_plot(update, context):
+    """Send a message when the command /update is issued."""
+    # For now, Mandy can only talk to me
+    if is_invalid_user(update):
+        return
+    generate_latest_plot()
+    update.message.reply_photo(open("./plot.jpg", "rb"))
+
+
+def send_audio(update, context):
+    """Send a message when the command /update is issued."""
+    # For now, Mandy can only talk to me
+    if is_invalid_user(update):
+        return
+    update.message.reply_audio(open("./output.wav", "rb"), title="Here is my most impressive bark")
+
+
+def start_tracking(update, context):
+    """Starts a background process running the tracking script"""
+    if is_invalid_user(update):
+        return
+    global extProc 
+    if extProc == None:
+        # TODO: repetitive code, make this a function
+        # TODO: we need some kind of id, shared between the bot and the tracker script to give info on the current tracking session only...
+        extProc = Popen(['pipenv', 'run', 'python','tracker.py'], stdout=DEVNULL, stderr=DEVNULL)
+        update.message.reply_text("Started tracking...") 
+    # If the tracking has previously be terminated we can see detect it with the statuscode -15
+    elif Popen.poll(extProc) == -15:
+        #TODO: it looks like this script is quite heavy in the background... it also crashed already once. Check maybe if it could be leaner?
+        extProc = Popen(['pipenv', 'run', 'python','tracker.py'], stdout=DEVNULL, stderr=DEVNULL)
+        update.message.reply_text("Started tracking...") 
+    else:
+        update.message.reply_text("I can't start tracking, because a tracking process is already running...") 
+
+
+def stop_tracking(update, context):
+    """Stops the tracking script that is running in the background"""
+    if is_invalid_user(update):
+        return
+    global extProc 
+    if extProc != None:
+        Popen.terminate(extProc)
+        print(Popen.poll(extProc))
+        update.message.reply_text("Tracking process stopped.")
+    else:
+        update.message.reply_text("No tracking process running...")
 
 
 def error(update, context):
@@ -67,12 +125,13 @@ def main():
     dp = updater.dispatcher
 
     # on different commands - answer in Telegram
-    dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("help", help))
-    dp.add_handler(CommandHandler("update", update))
-
-    # on noncommand i.e message - echo the message on Telegram
-    dp.add_handler(MessageHandler(Filters.text, echo))
+    dp.add_handler(CommandHandler("send_update", send_update))
+    dp.add_handler(CommandHandler("send_plot", send_plot))
+    dp.add_handler(CommandHandler("send_audio", send_audio))
+    dp.add_handler(CommandHandler("start_tracking", start_tracking))
+    dp.add_handler(CommandHandler("stop_tracking", stop_tracking))
+    # TODO: add a function to record audio and send it...
 
     # log all errors
     dp.add_error_handler(error)

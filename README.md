@@ -22,6 +22,8 @@ I am following [this tutorial](https://www.codementor.io/@karandeepbatra/part-1-
 pipenv install python-dotenv
 ```
 
+> Note: It looks like `dotenv` is actually not necessary when using pipenv. The .env file automatically gets loaded whenever you run a script.
+
 ## Start tracking Mandy
 This happens in the tracker.py file. We need a Postgres DB connection & we need to be able to listen to & record audio.
 
@@ -34,16 +36,12 @@ To connect to my Cockroach DB from python I need to install psycopg2 module.
 pipenv install psycopg2-binary
 ```
 
-Sadly for me this did not work out of the box. I kept getting import errors, also after uninstalling and reinstalling and trying it without pipenv. After researching more I tried:
+Sadly for me this did not work out of the box. After trying different things, what fixed it for me was downgrading to a older version of psycopg2-binary:
 
 ```
-brew install libpq
-? brew install openssl
+pipenv install psycopg2-binary==2.9.3
 ```
 
-Which took really long to run and I have no clue if it works
-
-> Still in progres...
 
 ### Set up pyaudio
 To install pyaudio, I needed to brew install portaudio first on my Mac:
