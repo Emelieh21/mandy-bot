@@ -11,6 +11,9 @@ import matplotlib
 matplotlib.use("Agg")
 from matplotlib import pyplot as plt
 import matplotlib.dates as mdates
+import pyaudio
+import wave
+import config.settings as settings
 
 def connect_db():
     conn = psycopg2.connect(
@@ -21,14 +24,15 @@ def connect_db():
         port=26257)
     return conn
   
+
 def create_table_if_needed(conn, delete_current = False):
     cur = conn.cursor()
     if (delete_current):
-        query = "drop table mandy_noise"
+        query = f"drop table {settings.TABLE_NAME}"
         cur.execute(query)
     # Insert the DataFrame into PostgreSQL
-    query = """
-            CREATE table if not exists mandy_noise (
+    query = f"""
+            CREATE table if not exists {settings.TABLE_NAME} (
                 uuid varchar,
                 start_time varchar,
                 end_time varchar,
@@ -40,22 +44,38 @@ def create_table_if_needed(conn, delete_current = False):
     conn.commit()
     cur.close()
 
-# Add a row
+
 def add_row_to_table(conn, uuid, start_time, end_time, silent_count, noise_count):
     cur = conn.cursor()
     current_uuid = uuid
-    cur.execute(f"INSERT INTO mandy_noise (uuid, start_time, end_time, silent_count, noise_count) VALUES ('{current_uuid}', '{start_time}', '{end_time}', {silent_count}, {noise_count})")
+    cur.execute(f"INSERT INTO {settings.TABLE_NAME} (uuid, start_time, end_time, silent_count, noise_count) VALUES ('{current_uuid}', '{start_time}', '{end_time}', {silent_count}, {noise_count})")
     conn.commit()
     cur.close()
+
 
 def generate_uuid():
     return str(uuid.uuid4())
 
-# Print this beautiful new table...
-def get_update():
+
+def get_latest_session_data():
     conn = connect_db()
-    df = pd.read_sql('SELECT * from mandy_noise', conn)
+    # Check what was the uuid of the latest timestamp
+    df = pd.read_sql(f"""
+                     with current_session_uuid as (
+                        select uuid 
+                        from {settings.TABLE_NAME}
+                        order by end_time desc
+                        limit 1
+                     )
+                     SELECT * from {settings.TABLE_NAME}
+                     where uuid IN (select uuid from current_session_uuid)
+                     """, conn)
     conn.close()
+    return(df)
+
+
+def get_update():
+    df = get_latest_session_data()
     silent_count_sum = df['silent_count'].sum()
     noise_count_sum = df['noise_count'].sum()
     noise_share = noise_count_sum/(noise_count_sum+silent_count_sum)
@@ -65,9 +85,9 @@ def get_update():
     result = f"I have been noisy {math.ceil(noise_share*100)}% of the time between {min_time[:-10]} and {max_time[:-10]}"
     return(result)
 
+
 def generate_latest_plot():
-    conn = connect_db()
-    df = pd.read_sql('SELECT * from mandy_noise', conn)
+    df = get_latest_session_data()
     # make up some data
     x = pd.to_datetime(df['end_time']) 
     y = df['noise_count']/(df['silent_count']+df['noise_count'])
@@ -78,12 +98,14 @@ def generate_latest_plot():
     # Customize x-axis date and time format
     date_format = mdates.DateFormatter('%H:%M')
     plt.gca().xaxis.set_major_formatter(date_format)
+    # TODO: the y-axis would look better as % and title % of time I have spend barking
     plt.title('Time I have spend barking')
     plt.tight_layout()
 
     # Save the plot as a JPG file
     plt.savefig('plot.jpg', format='jpg')
     plt.close()
+
 
 def is_invalid_user(update):
     print(update.message.chat.id)
@@ -92,3 +114,36 @@ def is_invalid_user(update):
         return True
     else:
         return False
+
+
+def save_recording(p, frames, filename = settings.FILENAME):
+    # Save the recorded data as a WAV file
+    wf = wave.open(filename, 'wb')
+    wf.setnchannels(settings.CHANNELS)
+    wf.setsampwidth(p.get_sample_size(settings.SAMPLE_FORMAT))
+    wf.setframerate(settings.FS)
+    wf.writeframes(b''.join(frames))
+    wf.close()
+
+
+def record_audio(filename = settings.FILENAME, seconds_to_record = settings.SECONDS_TO_RECORD):
+    p = pyaudio.PyAudio()  # Create an interface to PortAudio
+    stream = p.open(format=settings.SAMPLE_FORMAT,
+                    channels=settings.CHANNELS,
+                    rate=settings.FS,
+                    frames_per_buffer=settings.CHUNK,
+                    input=True)
+    print('Started recording...')
+    frames = []  # Initialize array to store frames
+    # Store data in chunks for X seconds
+    for i in range(0, int(settings.FS / settings.CHUNK * seconds_to_record)):
+        data = stream.read(settings.CHUNK)
+        frames.append(data)
+
+    # Stop and close the stream 
+    stream.stop_stream()
+    stream.close()
+    # Terminate the PortAudio interface
+    p.terminate()
+    save_recording(p, frames, filename)
+    print(f'Recording stored as {filename}')

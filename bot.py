@@ -17,9 +17,10 @@ bot.
 
 import os
 import logging
-from utils.functions import get_update, generate_latest_plot, is_invalid_user
+from utils.functions import get_update, generate_latest_plot, is_invalid_user, record_audio
 from subprocess import Popen, DEVNULL
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram.ext import Updater, CommandHandler
+import config.settings as settings
 
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -32,27 +33,23 @@ extProc = None
 
 # Define a few command handlers. These usually take the two arguments update and
 # context. Error handlers also receive the raised TelegramError object in error.
-
-
 def help(update, context):
     """Send a message when the command /help is issued."""
-    # For now, Mandy can only talk to me
     if is_invalid_user(update):
         return
     help_text = (
-        "Hi, I am Mandy. I can assist you with the following commands:\n"
+        "Hi, I am "+settings.BOT_NAME+". I can assist you with the following commands:\n"
         "/send_update - Sends a summary of my noise\n"
         "/send_audio - Sends a voice clip\n"
         "/send_plot - Sends a plot\n"
-        "/start_tracking - To start tracking Mandy's noise\n"
-        "/stop_tracking - To stop tracking Mandy's noise\n"
+        "/start_tracking - To start tracking noise\n"
+        "/stop_tracking - To stop tracking noise\n"
     )
     update.message.reply_text(help_text)
 
 
 def send_update(update, context):
     """Send a message when the command /update is issued."""
-    # For now, Mandy can only talk to me
     if is_invalid_user(update):
         return
     txt = get_update()
@@ -61,7 +58,6 @@ def send_update(update, context):
 
 def send_plot(update, context):
     """Send a message when the command /update is issued."""
-    # For now, Mandy can only talk to me
     if is_invalid_user(update):
         return
     generate_latest_plot()
@@ -70,10 +66,13 @@ def send_plot(update, context):
 
 def send_audio(update, context):
     """Send a message when the command /update is issued."""
-    # For now, Mandy can only talk to me
     if is_invalid_user(update):
         return
-    update.message.reply_audio(open("./output.wav", "rb"), title="Here is my most impressive bark")
+    update.message.reply_text(f"{settings.BOT_NAME} is recording an audio message...")
+    record_audio()
+    update.message.reply_audio(open("./output.wav", "rb"), 
+                               title="Here is my most impressive bark",
+                               performer=settings.BOT_NAME)
 
 
 def start_tracking(update, context):
@@ -118,7 +117,7 @@ def main():
     # Create the Updater and pass it your bot's token.
     # Make sure to set use_context=True to use the new context based callbacks
     # Post version 12 this will no longer be necessary
-    print("MandyBot is running...")
+    print(f"{settings.BOT_NAME}Bot is running...")
     updater = Updater(os.environ.get("TOKEN"), use_context=True)
 
     # Get the dispatcher to register handlers
